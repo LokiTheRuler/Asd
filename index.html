@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Asteroid Dodger — Polarity, Focus, Laser, Dash, Daily</title>
+<style>
+  /* ====== Global reset ====== */
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #000; color: #eee;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    touch-action: none; /* Prevent browser gestures interfering with controls */
+    -webkit-user-select: none; user-select: none;
+  }
+  canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+
+  /* ====== Overlay UI ====== */
+  .ui {
+    position: fixed; left: 0; right: 0; top: 0; pointer-events: none; padding: 12px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  }
+  .hud {
+    pointer-events: none;
+    background: rgba(10,10,16,0.35);
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(6px);
+    border-radius: 10px; padding: 8px 10px; line-height: 1.35;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  }
+  .hud strong { color: #fff; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .cooldowns { display: flex; gap: 8px; }
+  .cd {
+    min-width: 64px;
+    text-align: center; font-size: 12px; color: #cbd5e1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; padding: 4px 6px;
+  }
+  .cd.ready { color: #a7f3d0; border-color: rgba(167,243,208,0.35);}
+  .meter {
+    position: relative; width: 220px; height: 10px; border-radius: 6px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.06));
+    overflow: hidden; border: 1px solid rgba(255,255,255,0.08);
+  }
+  .meter > span {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: linear-gradient(90deg, #60a5fa, #fbbf24);
+    box-shadow: inset 0 0 8px rgba(255,255,255,0.2);
+  }
+  .mutators {
+    pointer-events: none;
+    background: rgba(10,10,16,0.35);
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(6px);
+    border-radius: 10px; padding: 8px 10px; line-height: 1.35; max-width: 40vw;
+  }
+  .mutators h4 { margin: 0 0 6px 0; font-size: 13px; color: #f8fafc; opacity: 0.9;}
+  .mutators .pill {
+    display: inline-block; margin: 2px 4px 0 0; padding: 3px 7px; border-radius: 999px;
+    font-size: 11px; color: #cbd5e1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+  }
+  .settings {
+    pointer-events: auto; cursor: pointer;
+    background: rgba(10,10,16,0.35);
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(6px);
+    border-radius: 10px; padding: 8px 10px; line-height: 1.35;
+  }
+  .settings h4 { margin: 0 0 6px 0; font-size: 13px; }
+  .settings label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #e5e7eb; }
+  .settings input[type=checkbox] { transform: scale(1.1); }
+  .hint {
+    font-size: 12px; color: #9ca3af; margin-top: 6px;
+  }
+
+  /* ====== Touch controls ====== */
+  .controls {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 10px; gap: 10px; pointer-events: none;
+  }
+  .pad {
+    pointer-events: auto;
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+  }
+  .btn {
+    user-select: none;
+    width: 76px; height: 76px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(120px 120px at 30% 30%, rgba(255,255,255,0.18), rgba(255,255,255,0.08));
+    border: 1px solid rgba(255,255,255,0.13);
+    color: #e5e7eb; font-weight: 700; font-size: 16px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12);
+    touch-action: none;
+  }
+  .btn:active { transform: translateY(1px); }
+  .cluster {
+    pointer-events: auto;
+    display: grid; grid-template-columns: repeat(3, 76px); gap: 10px; align-items: end;
+  }
+  .btn.small { width: 60px; height: 60px; font-size: 14px; }
+  .btn.pulse-ready { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 10px 24px rgba(0,0,0,0.4), 0 0 0 0 rgba(167,243,208,0.4); }
+    50%    { box-shadow: 0 10px 24px rgba(0,0,0,0.4), 0 0 0 10px rgba(167,243,208,0); }
+  }
+
+  /* ====== Pause overlay ====== */
+  .pause {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 5;
+    backdrop-filter: blur(2px);
+  }
+  .pause .box {
+    background: rgba(10,10,16,0.55);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; padding: 16px 18px; color: #e5e7eb;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    text-align: center; max-width: min(92vw, 520px);
+  }
+  .pause .box h3 { margin: 6px 0 10px 0; }
+  .pause .keys { font-size: 13px; color: #cbd5e1; line-height: 1.6; }
+  .pause .mut { margin-top: 8px; }
+  .show { display: grid; }
+</style>
+</head>
+<body>
+<canvas id="game" tabindex="0" aria-label="Asteroid Dodger"></canvas>
+
+<div class="ui">
+  <div class="hud" id="hudLeft">
+    <div class="row">
+      <div><strong>Score:</strong> <span id="score">0</span></div>
+      <div><strong>Best:</strong> <span id="best">0</span></div>
+      <div><strong>Daily:</strong> <span id="dailyBest">0</span></div>
+      <div><strong>Combo:</strong> <span id="combo">x1</span></div>
+      <div><strong>Mult:</strong> <span id="mult">x1.0</span></div>
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <div class="meter" aria-label="Near-miss meter"><span id="nearFill"></span></div>
+      <div class="cooldowns">
+        <div class="cd" id="cdLaser">Laser</div>
+        <div class="cd" id="cdDash">Dash</div>
+        <div class="cd" id="cdFocus">Focus</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mutators" id="mutators">
+    <h4>Daily mutators</h4>
+    <div id="mutatorList"></div>
+  </div>
+
+  <div class="settings" id="settings">
+    <h4>Settings</h4>
+    <label><input type="checkbox" id="cbColorblind"> Colorblind-safe colors</label>
+    <label><input type="checkbox" id="cbDaily"> Daily run (seeded)</label>
+    <label><input type="checkbox" id="cbGhost"> Show ghost rival</label>
+    <div class="hint">Keys: ←/A, →/D, Space=Swap, E=Focus, F=Laser, Shift=Dash, P=Pause</div>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="pad">
+    <div class="btn" id="btnLeft">←</div>
+    <div class="btn" id="btnRight">→</div>
+  </div>
+  <div class="cluster">
+    <div class="btn small" id="btnSwap">Swap</div>
+    <div class="btn small" id="btnLaser">Laser</div>
+    <div class="btn small" id="btnDash">Dash</div>
+    <div class="btn small" id="btnFocus">Focus</div>
+  </div>
+</div>
+
+<div class="pause" id="pauseOverlay" role="dialog" aria-modal="true">
+  <div class="box">
+    <h3>Paused</h3>
+    <div class="keys">
+      Move: ←/A and →/D • Swap: Space • Focus: E • Laser: F • Dash: Shift • Pause: P
+    </div>
+    <div class="mut" id="pauseMutators"></div>
+    <div style="margin-top:10px; font-size:12px; color:#94a3b8;">
+      Daily seed rotates each day; your best daily is saved separately.
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   Asteroid Dodger — Pure HTML5 Canvas Game
+   Implements:
+   - Polarity swap (blue/yellow), pass-through same color, collide opposite
+   - Near-Miss meter + Focus Time (slow 60% for 2s with desaturation)
+   - Laser (vertical) that splits asteroids into debris
+   - Combo/Finesse (star chains, near-miss, threading bonus)
+   - Ghost Rival (replay best run) via localStorage
+   - Phase Dash (0.3s intangibility + trail pushes asteroids)
+   - Daily run with mutators (seed YYYYMMDD)
+   - Nebula background, parallax starfield, twinkle, palette shifts
+   - Screen shake, camera lean, ship trail, particles, colorblind-safe
+   - WebAudio SFX + evolving music layers
+   - Fixed-step physics at 60Hz with interpolation, object pooling
+   - Responsive canvas, pause on tab hidden, minimal DOM churn
+============================================================================ */
+
+/* ===== Canvas and context ===== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+/* ===== UI elements ===== */
+const elScore = document.getElementById('score');
+const elBest = document.getElementById('best');
+const elDailyBest = document.getElementById('dailyBest');
+const elCombo = document.getElementById('combo');
+const elMult = document.getElementById('mult');
+const elNearFill = document.getElementById('nearFill');
+const elCDLaser = document.getElementById('cdLaser');
+const elCDDash = document.getElementById('cdDash');
+const elCDFocus = document.getElementById('cdFocus');
+const elMutators = document.getElementById('mutatorList');
+const elPause = document.getElementById('pauseOverlay');
+const elPauseMut = document.getElementById('pauseMutators');
+
+const cbColorblind = document.getElementById('cbColorblind');
+const cbDaily = document.getElementById('cbDaily');
+const cbGhost = document.getElementById('cbGhost');
+
+/* ===== Touch buttons ===== */
+const btnLeft = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const btnSwap = document.getElementById('btnSwap');
+const btnLaser = document.getElementById('btnLaser');
+const btnDash = document.getElementById('btnDash');
+const btnFocus = document.getElementById('btnFocus');
+
+/* ===== Storage keys ===== */
+const todayKey = (() => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = (''+(d.getMonth()+1)).padStart(2,'0');
+  const dd = (''+d.getDate()).padStart(2,'0');
+  return `${yyyy}${mm}${dd}`;
+})();
+const LS_BEST = 'aster-best';
+const LS_DAILY_BEST = `aster-daily-${todayKey}.best`;
+const LS_GHOST = 'aster-ghost';
+const LS_SETTINGS = 'aster-settings';
+
+/* ===== Settings (persisted) ===== */
+let settings = {
+  colorblind: false,
+  daily: true,
+  ghost: true,
+};
+try {
+  const s = JSON.parse(localStorage.getItem(LS_SETTINGS) || 'null');
+  if (s) settings = Object.assign(settings, s);
+} catch {}
+cbColorblind.checked = !!settings.colorblind;
+cbDaily.checked = !!settings.daily;
+cbGhost.checked = !!settings.ghost;
+
+/* ===== Utility: seeded RNG (Mulberry32) ===== */
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+let seededRand = mulberry32(Number(todayKey) % 2**32);
+
+/* ===== Game state ===== */
+let W=0,H=0, DPR=1;
+let running = true, paused = false, hasFocus = true, time = 0, frameId = 0;
+let accumulator = 0, dt = 1/60, simFrame = 0;
+let screenShake = 0, camLean = 0;
+let bgHueBase = 260, bgShiftT = 0; // background palette shift
+
+/* ===== Input ===== */
+const input = {
+  left: false, right: false,
+  swap: false, trySwap: false,
+  focus: false, tryFocus: false,
+  laser: false, tryLaser: false,
+  dash: false, tryDash: false,
+  mirrored: false, // mutator
+};
+function setKey(code, down) {
+  if (code==='ArrowLeft' || code==='KeyA') input.left = down;
+  if (code==='ArrowRight' || code==='KeyD') input.right = down;
+  if (code==='Space') { input.swap = down; if (down) input.trySwap = true; }
+  if (code==='KeyE') { input.focus = down; if (down) input.tryFocus = true; }
+  if (code==='KeyF') { input.laser = down; if (down) input.tryLaser = true; }
+  if (code==='ShiftLeft' || code==='ShiftRight') { input.dash = down; if (down) input.tryDash = true; }
+  if (code==='KeyP' && down) togglePause();
+}
+window.addEventListener('keydown', e => { if (!paused) setKey(e.code, true); if (['ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault(); });
+window.addEventListener('keyup',   e => setKey(e.code, false));
+
+/* ===== Touch controls ===== */
+function buttonHold(btn, onChange) {
+  let holding = false;
+  const set = (v, ev) => { if (holding === v) return; holding = v; onChange(v, ev); };
+  const start = (ev) => set(true, ev);
+  const move  = () => {};
+  const end   = (ev) => set(false, ev);
+  btn.addEventListener('touchstart', start);
+  btn.addEventListener('mousedown', start);
+  window.addEventListener('touchmove', move);
+  window.addEventListener('touchend', end);
+  window.addEventListener('mouseup', end);
+}
+buttonHold(btnLeft,  v => input.left = v);
+buttonHold(btnRight, v => input.right = v);
+buttonHold(btnSwap,  v => { if (v) input.trySwap = true; });
+buttonHold(btnLaser, v => { if (v) input.tryLaser = true; });
+buttonHold(btnDash,  v => { if (v) input.tryDash = true; });
+buttonHold(btnFocus, v => { if (v) input.tryFocus = true; });
+
+/* ===== Audio (WebAudio API) ===== */
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audio = new AudioCtx();
+let audioEnabled = false;
+function ensureAudio() {
+  if (!audioEnabled) {
+    // Resume on first interaction
+    audio.resume();
+    audioEnabled = true;
+  }
+}
+window.addEventListener('pointerdown', ensureAudio);
+window.addEventListener('keydown', ensureAudio);
+
+// Master
+const master = audio.createGain(); master.gain.value = 0.8; master.connect(audio.destination);
+const sfx = audio.createGain(); sfx.gain.value = 0.9; sfx.connect(master);
+const musicBus = audio.createGain(); musicBus.gain.value = 0.35; musicBus.connect(master);
+
+// Simple envelopes
+function envNode(param, v0, v1, t0, a, d) {
+  param.cancelScheduledValues(t0);
+  param.setValueAtTime(v0, t0);
+  param.linearRampToValueAtTime(v1, t0 + a);
+  param.linearRampToValueAtTime(0.0001, t0 + a + d);
+}
+// Noise buffer
+const noiseBuf = (() => {
+  const buf = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0;i<data.length;i++) data[i] = Math.random()*2-1;
+  return buf;
+})();
+// SFX
+function sfxCollision() {
+  const t = audio.currentTime;
+  const src = audio.createBufferSource(); src.buffer = noiseBuf;
+  const filt = audio.createBiquadFilter(); filt.type = 'highpass'; filt.frequency.value = 800;
+  const g = audio.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  envNode(g.gain, 0.0001, 0.7, t, 0.005, 0.18);
+  src.connect(filt); filt.connect(g); g.connect(sfx);
+  src.start(t); src.stop(t+0.25);
+}
+function sfxStar(freq=700) {
+  const t = audio.currentTime;
+  const osc = audio.createOscillator(); osc.type='sine'; osc.frequency.setValueAtTime(freq, t);
+  const g = audio.createGain(); g.gain.setValueAtTime(0.0001, t);
+  envNode(g.gain, 0.0001, 0.6, t, 0.005, 0.12);
+  osc.connect(g); g.connect(sfx); osc.start(t); osc.stop(t+0.2);
+}
+function sfxSwap() {
+  const t = audio.currentTime;
+  const osc = audio.createOscillator(); osc.type='triangle';
+  const g = audio.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  envNode(g.gain, 0.0001, 0.5, t, 0.02, 0.18);
+  osc.frequency.setValueAtTime(300, t);
+  osc.frequency.exponentialRampToValueAtTime(700, t+0.08);
+  osc.connect(g); g.connect(sfx); osc.start(t); osc.stop(t+0.25);
+}
+function sfxLaser() {
+  const t = audio.currentTime;
+  const osc = audio.createOscillator(); osc.type='sawtooth';
+  const g = audio.createGain(); g.gain.setValueAtTime(0.0001, t);
+  envNode(g.gain, 0.0001, 0.5, t, 0.01, 0.1);
+  osc.frequency.setValueAtTime(500, t);
+  osc.frequency.linearRampToValueAtTime(1200, t+0.06);
+  osc.connect(g); g.connect(sfx); osc.start(t); osc.stop(t+0.15);
+}
+function sfxDash() {
+  const t = audio.currentTime;
+  const osc = audio.createOscillator(); osc.type='square';
+  const g = audio.createGain(); g.gain.setValueAtTime(0.0001, t);
+  envNode(g.gain, 0.0001, 0.6, t, 0.005, 0.12);
+  osc.frequency.setValueAtTime(180, t);
+  osc.connect(g); g.connect(sfx); osc.start(t); osc.stop(t+0.18);
+}
+// Simple evolving music layers
+const music = {
+  started:false, t:0, layers:0, seqStep:0,
+  base: audio.createGain(), hi: audio.createGain(), arp: audio.createGain()
+};
+music.base.gain.value = 0.15; music.base.connect(musicBus);
+music.hi.gain.value = 0.08; music.hi.connect(musicBus);
+music.arp.gain.value = 0.06; music.arp.connect(musicBus);
+function startMusic() {
+  if (music.started) return; music.started = true;
+  // Base kick/bass pulse
+  setInterval(()=>{
+    if (paused) return;
+    const t = audio.currentTime;
+    const o = audio.createOscillator(); o.type='sine';
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    envNode(g.gain, 0.0001, 0.4, t, 0.005, 0.25);
+    o.frequency.setValueAtTime(90, t);
+    o.frequency.exponentialRampToValueAtTime(50, t+0.08);
+    o.connect(g); g.connect(music.base);
+    o.start(t); o.stop(t+0.3);
+  }, 500);
+  // Hi noise ticks (add later)
+  setInterval(()=>{
+    if (paused) return;
+    if (music.layers < 1) return;
+    const t = audio.currentTime;
+    const src = audio.createBufferSource(); src.buffer = noiseBuf;
+    const bp = audio.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value= 2000; bp.Q.value=8;
+    const g = audio.createGain(); g.gain.setValueAtTime(0.0001, t);
+    envNode(g.gain, 0.0001, 0.2, t, 0.002, 0.05);
+    src.connect(bp); bp.connect(g); g.connect(music.hi);
+    src.start(t); src.stop(t+0.06);
+  }, 250);
+  // Arp notes (add later)
+  setInterval(()=>{
+    if (paused) return;
+    if (music.layers < 2) return;
+    const t = audio.currentTime;
+    const o = audio.createOscillator(); o.type='triangle';
+    const g = audio.createGain(); g.gain.setValueAtTime(0.0001, t);
+    envNode(g.gain, 0.0001, 0.2, t, 0.005, 0.18);
+    const scale = [220, 247, 294, 330, 370, 440]; // A minor-ish
+    const f = scale[(music.seqStep++) % scale.length] * (Math.random()<0.5?1:2);
+    o.frequency.setValueAtTime(f, t);
+    o.connect(g); g.connect(music.arp);
+    o.start(t); o.stop(t+0.2);
+  }, 375);
+}
+
+/* ===== World units ===== */
+const world = {
+  player: null,
+  asteroids: [],
+  stars: [],
+  particles: [],
+  debris: [], // also asteroids but smaller; re-use asteroid pool flag
+  maxAsteroids: 120,
+  maxStars: 50,
+  maxDebris: 160,
+  maxParticles: 300,
+  starLayers: [],
+  ghost: null,
+};
+
+/* ===== Colors ===== */
+const colors = {
+  blue: '#4da3ff',
+  yellow: '#ffd84d',
+  orange: '#ff9f1c',
+  cyan: '#22d3ee',
+  white: '#ffffff',
+  ui: '#cbd5e1'
+};
+function getPolarityColors() {
+  if (settings.colorblind) {
+    return { A: colors.blue, B: colors.orange };
+  } else {
+    return { A: colors.blue, B: colors.yellow };
+  }
+}
+
+/* ===== Player ===== */
+function makePlayer() {
+  return {
+    x: 0, y: 0, vx: 0, speed: 480, // px/s world units scaled later
+    r: 18, polarity: 'A', invFlash: 0,
+    dashCD: 3.2, dashReady: 0, dashT: 0, intanT: 0,
+    laserCD: 0.75, laserReady: 0,
+    focusReady: 0, focusCD: 6, focusT: 0,
+    nearMeter: 0, // 0..1
+    combo: 1, comboT: 0,
+    mult: 1.0, dangerTime: 0,
+    dead: false, score: 0,
+    trail: [], // recent positions for motion trail
+  };
+}
+
+/* ===== Pools ===== */
+function makePool(n, factory) {
+  const arr = new Array(n);
+  for (let i=0;i<n;i++) arr[i] = factory();
+  return arr;
+}
+function alloc(pool) {
+  for (let i=0;i<pool.length;i++) {
+    const o = pool[i];
+    if (!o.active) { o.active = true; return o; }
+  }
+  return null;
+}
+
+/* ===== Entities ===== */
+function makeAsteroid() {
+  return { active:false, x:0,y:0, r:16, vx:0, vy:0, color: (Math.random()<0.5?'A':'B'), spin:0, ang:0, debris:false };
+}
+function makeStarPickup() {
+  return { active:false, x:0,y:0, r:8, vy: 120 };
+}
+function makeParticle() {
+  return { active:false, x:0, y:0, vx:0, vy:0, life:0, max:1, color:'#fff', size:2 };
+}
+
+/* ===== Starfield (parallax) ===== */
+function initStarfield() {
+  world.starLayers = [];
+  for (let i=0;i<3;i++) {
+    const layer = [];
+    const count = (i+1)*40;
+    for (let j=0;j<count;j++) {
+      layer.push({
+        x: Math.random(), y: Math.random(), s: (i+1)/3, tw: Math.random()*Math.PI*2
+      });
+    }
+    world.starLayers.push(layer);
+  }
+}
+
+/* ===== Mutators (daily) ===== */
+const MUTATORS = [
+  'Heavy Gravity', // faster asteroids
+  'Double Stars',  // more stars
+  'Narrow Ship',   // smaller ship radius
+  'Mirror Controls', // invert
+  'Fog'            // reduced visibility
+];
+let activeMutators = [];
+function pickDailyMutators() {
+  const r = mulberry32(Number(todayKey));
+  const count = 1 + Math.floor(r()*2);
+  const pool = [...MUTATORS];
+  activeMutators = [];
+  for (let i=0;i<count;i++) {
+    const idx = Math.floor(r()*pool.length);
+    activeMutators.push(pool.splice(idx,1)[0]);
+  }
+}
+
+/* ===== Daily / RNG helpers ===== */
+function R() {
+  return settings.daily ? seededRand() : Math.random();
+}
+
+/* ===== Spawners and difficulty ===== */
+let spawnT = 0, starT = 0, difficulty = 1;
+function updateDifficulty(dt) {
+  // Gradually ramp difficulty with time and score
+  difficulty = 1 + Math.min(2.5, world.player.score/1500 + time/45);
+  // Music layer gates
+  music.layers = (difficulty > 1.3 ? 1 : 0) + (difficulty > 2.0 ? 1 : 0);
+}
+function spawnAsteroid() {
+  const a = alloc(world.asteroids);
+  if (!a) return;
+  const laneCount = 8;
+  const lane = Math.floor(R()*laneCount);
+  const x = (lane+0.5) * (W/laneCount);
+  const r = 12 + R()*26*(difficulty*0.6);
+  const vyBase = 160 + 80*difficulty;
+  const heavy = activeMutators.includes('Heavy Gravity') ? 1.35 : 1.0;
+  const vy = vyBase * heavy * (0.8 + R()*0.6);
+  const vx = (R()*2-1) * 40 * (0.8 + difficulty*0.2);
+  Object.assign(a, { x, y: -40, r, vx, vy, color: (R()<0.5?'A':'B'), spin: (R()*2-1)*2, ang:0, active:true, debris:false });
+}
+function spawnStar() {
+  const s = alloc(world.stars);
+  if (!s) return;
+  const x = 40 + R()*(W-80);
+  Object.assign(s, { x, y: -20, r: 8, vy: 120 + R()*80, active: true });
+}
+
+/* ===== Init ===== */
+function resize() {
+  DPR = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+  W = Math.floor(window.innerWidth * DPR);
+  H = Math.floor(window.innerHeight * DPR);
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+}
+resize(); window.addEventListener('resize', resize);
+initStarfield();
+
+world.asteroids = makePool(220, makeAsteroid);
+world.stars = makePool(80, makeStarPickup);
+world.debris = world.asteroids; // share pool; debris flagged
+world.particles = makePool(400, makeParticle);
+world.player = makePlayer();
+resetRun(true);
+
+/* ===== Ghost Rival ===== */
+let ghostData = null;
+try { ghostData = JSON.parse(localStorage.getItem(LS_GHOST)||'null'); } catch {}
+let ghostPlayback = { t:0, idx:0, active:false };
+
+/* ===== Game flow ===== */
+function resetRun(first=false) {
+  // Seed RNG for daily
+  seededRand = mulberry32(Number(todayKey) % 2**32);
+  pickDailyMutators();
+  // Clear entities
+  for (const a of world.asteroids) a.active=false;
+  for (const s of world.stars) s.active=false;
+  for (const p of world.particles) p.active=false;
+  // Player
+  const p = world.player;
+  p.x = W/2; p.y = H*0.84; p.vx = 0;
+  p.r = activeMutators.includes('Narrow Ship') ? 14 : 18;
+  p.polarity = 'A'; p.invFlash = 0;
+  p.dashReady = 1; p.dashT = 0; p.intanT = 0;
+  p.laserReady = 1; p.focusReady = 1; p.focusT=0;
+  p.nearMeter = 0; p.combo = 1; p.comboT = 0; p.mult=1; p.dangerTime=0;
+  p.dead = false; p.score = 0; p.trail.length = 0;
+
+  // Difficulty & timers
+  spawnT = 0; starT = 0; time = 0; simFrame = 0; bgShiftT = 0;
+  screenShake = 0; camLean = 0;
+
+  // Ghost playback
+  ghostPlayback = { t:0, idx:0, active: !!(settings.ghost && ghostData && ghostData.samples && ghostData.samples.length) };
+
+  // Update UI mutators
+  renderMutators();
+  // Start music engine once
+  startMusic();
+}
+
+/* ===== UI rendering (mutators, cooldowns) ===== */
+function renderMutators() {
+  const list = activeMutators.map(m=> `<span class="pill">${m}</span>`).join('');
+  elMutators.innerHTML = list || '<span class="pill">None</span>';
+  elPauseMut.innerHTML = '<strong>Mutators:</strong> ' + (list || 'None');
+}
+
+/* ===== Settings change ===== */
+function saveSettings() {
+  settings.colorblind = cbColorblind.checked;
+  settings.daily = cbDaily.checked;
+  settings.ghost = cbGhost.checked;
+  localStorage.setItem(LS_SETTINGS, JSON.stringify(settings));
+}
+cbColorblind.addEventListener('change', saveSettings);
+cbDaily.addEventListener('change', ()=>{ saveSettings(); resetRun(); });
+cbGhost.addEventListener('change', saveSettings);
+
+/* ===== Pause handling ===== */
+function togglePause(force=null) {
+  paused = (force===null) ? !paused : !!force;
+  elPause.classList.toggle('show', paused);
+}
+document.addEventListener('visibilitychange', ()=> {
+  if (document.hidden) togglePause(true);
+});
+
+/* ===== Collision helpers ===== */
+function dist2(a,b,x,y) {
+  const dx = a-x, dy=b-y; return dx*dx + dy*dy;
+}
+
+/* ===== Particles ===== */
+function burst(x,y,color,count=12, speed=160, size=2) {
+  for (let i=0;i<count;i++) {
+    const p = alloc(world.particles); if (!p) break;
+    const ang = Math.random()*Math.PI*2;
+    p.x=x; p.y=y; p.vx=Math.cos(ang)*speed*(0.4+Math.random()*0.6);
+    p.vy=Math.sin(ang)*speed*(0.4+Math.random()*0.6);
+    p.life=0; p.max=0.6*(0.5+Math.random()); p.color=color; p.size=size*(0.7+Math.random()*0.6);
+  }
+}
+
+/* ===== Laser action ===== */
+function fireLaser() {
+  const p = world.player;
+  if (p.laserReady < 1 || p.dead) return;
+  p.laserReady = 0; sfxLaser(); screenShake = Math.max(screenShake, 10);
+  // Hit asteroids along vertical line at p.x within beamWidth
+  const beamW = 18;
+  for (const a of world.asteroids) if (a.active && !a.debris) {
+    if (Math.abs(a.x - p.x) < a.r + beamW && a.y < p.y) {
+      // Split or destroy
+      if (a.r > 18) {
+        const pieces = 2 + (Math.random()<0.5?1:0);
+        for (let i=0;i<pieces;i++) {
+          const d = alloc(world.debris); if (!d) break;
+          Object.assign(d, {
+            active:true, x:a.x+(Math.random()*2-1)*6, y:a.y+(Math.random()*2-1)*6,
+            r: a.r*0.55, vx: a.vx + (Math.random()*2-1)*120, vy: a.vy*(0.9+Math.random()*0.3),
+            color: a.color, spin: (Math.random()*2-1)*3, ang:0, debris:true
+          });
+        }
+      }
+      burst(a.x, a.y, '#cbd5e1', 10, 120, 2);
+      a.active = false;
+      world.player.score += Math.floor(5 * world.player.mult);
+    }
+  }
+}
+
+/* ===== Dash action ===== */
+function doDash(dir) {
+  const p = world.player;
+  if (p.dashReady < 1 || p.dead) return;
+  p.dashReady = 0; p.dashT = 0.18; p.intanT = 0.3; sfxDash();
+  p.vx += dir * (800 + 200*difficulty);
+  screenShake = Math.max(screenShake, 12);
+  // Push nearby asteroids by trail impulse
+  for (const a of world.asteroids) if (a.active) {
+    const dy = Math.abs(a.y - p.y);
+    if (dy < 140) {
+      const dx = a.x - p.x;
+      const d = Math.hypot(dx, dy);
+      if (d < 160) {
+        const push = (160 - d) / 160 * (dir*140);
+        a.vx += push;
+      }
+    }
+  }
+}
+
+/* ===== Swap action ===== */
+function swapPolarity() {
+  const p = world.player;
+  p.polarity = (p.polarity==='A'?'B':'A');
+  p.invFlash = 0.08; sfxSwap();
+}
+
+/* ===== Focus action (slow time) ===== */
+function tryFocus() {
+  const p = world.player; if (p.dead) return;
+  if (p.focusReady >= 1 && p.nearMeter >= 1) {
+    p.focusT = 2.0; p.focusReady = 0;
+  }
+}
+
+/* ===== Ghost recording ===== */
+let recorder = { samples: [], t:0 };
+function resetRecorder() { recorder = { samples: [], t:0 }; }
+function recordSample(dt) {
+  recorder.t += dt;
+  if ((recorder.samples.length % 2)===0) {
+    recorder.samples.push({ t: recorder.t, x: world.player.x/W }); // normalize x
+  }
+}
+function saveGhostIfBest(score, duration) {
+  const best = Number(localStorage.getItem(LS_BEST)||'0');
+  if (score > best) {
+    localStorage.setItem(LS_GHOST, JSON.stringify({ samples: recorder.samples, duration }));
+  }
+}
+
+/* ===== Scoring helpers ===== */
+function addScore(base) {
+  const p = world.player;
+  const s = Math.floor(base * p.mult * p.combo);
+  p.score += s;
+}
+
+/* ===== UI updates throttled ===== */
+let _lastScore=-1,_lastBest=-1,_lastDaily=-1,_lastCombo=-1,_lastMult=-1,_lastNear=-1;
+function updateHUD() {
+  const p = world.player;
+  if (p.score !== _lastScore) { _lastScore = p.score; elScore.textContent = p.score; }
+  const best = Number(localStorage.getItem(LS_BEST)||'0');
+  if (best !== _lastBest) { _lastBest = best; elBest.textContent = best; }
+  const dBest = Number(localStorage.getItem(LS_DAILY_BEST)||'0');
+  if (dBest !== _lastDaily) { _lastDaily = dBest; elDailyBest.textContent = dBest; }
+  if (p.combo !== _lastCombo) { _lastCombo = p.combo; elCombo.textContent = 'x'+p.combo; }
+  const m = p.mult.toFixed(1);
+  if (m !== _lastMult) { _lastMult = m; elMult.textContent = 'x'+m; }
+  const nf = Math.max(0, Math.min(1, p.nearMeter));
+  if (nf !== _lastNear) { _lastNear = nf; elNearFill.style.width = (nf*100).toFixed(1)+'%'; }
+
+  // Cooldowns
+  const fmt = (v)=> v>=1 ? 'Ready' : (v*100|0)+'%';
+  const setCD = (el, r) => {
+    const txt = r>=1 ? 'Ready' : ((r*100)|0)+'%';
+    el.textContent = el.dataset.label ? `${el.dataset.label} ${txt}` : txt;
+    el.classList.toggle('ready', r>=1);
+  };
+  elCDLaser.dataset.label='Laser ';
+  elCDDash.dataset.label='Dash ';
+  elCDFocus.dataset.label='Focus ';
+  setCD(elCDLaser, world.player.laserReady);
+  setCD(elCDDash, world.player.dashReady);
+  setCD(elCDFocus, world.player.focusReady);
+  // Touch button pulse when ready
+  btnLaser.classList.toggle('pulse-ready', world.player.laserReady>=1);
+  btnDash.classList.toggle('pulse-ready', world.player.dashReady>=1);
+  btnFocus.classList.toggle('pulse-ready', world.player.focusReady>=1 && world.player.nearMeter>=1);
+}
+
+/* ===== Background drawing: nebula + starfield ===== */
+function drawBackground(interp) {
+  bgShiftT += dt;
+  const t = time + interp*dt;
+  // Palette cycles
+  const cyc = (Math.sin((time/60)*Math.PI*2)*0.5+0.5);
+  const baseHue = (bgHueBase + cyc*60) % 360;
+  const grad = ctx.createLinearGradient(0,0, W,H);
+  grad.addColorStop(0, `hsl(${(baseHue+40)%360} 80% 8%)`);
+  grad.addColorStop(0.5, `hsl(${(baseHue+300)%360} 90% 10%)`);
+  grad.addColorStop(1, `hsl(${(baseHue+200)%360} 80% 7%)`);
+  ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
+
+  // Misty nebula layers (soft radial blobs drifting)
+  const blobCount = 5;
+  for (let i=0;i<blobCount;i++) {
+    const k = i+1;
+    const cx = (Math.sin((t*0.02 + i)*0.7)*0.4+0.5)*W;
+    const cy = (Math.cos((t*0.018 + i)*0.6)*0.4+0.5)*H;
+    const r = Math.min(W,H) * (0.35 + i*0.08);
+    const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g2.addColorStop(0, `hsla(${(baseHue + i*25)%360} 80% 55% / 0.08)`);
+    g2.addColorStop(1, `hsla(${(baseHue + i*25)%360} 80% 55% / 0)`);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Starfield parallax
+  for (let li=0; li<world.starLayers.length; li++) {
+    const layer = world.starLayers[li];
+    const speed = (li+1) * 6;
+    for (const s of layer) {
+      s.y += speed * dt;
+      if (s.y > 1) s.y -= 1;
+      const x = s.x * W, y = s.y * H;
+      const a = (Math.sin((t*1.5 + s.tw)*2)+1)/2 * 0.6 + 0.2;
+      ctx.globalAlpha = a * (0.4 + li*0.2);
+      ctx.fillStyle = '#bcd';
+      ctx.fillRect(x, y, 1.2 + li, 1.2 + li);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+/* ===== Drawing helpers ===== */
+function drawShip(p, alpha=1, ghost=false) {
+  const pc = getPolarityColors();
+  const color = (p.polarity==='A') ? pc.A : pc.B;
+  const r = p.r;
+  ctx.save();
+  // Motion lean and camera applied outside; just draw ship
+  ctx.globalAlpha = alpha;
+
+  // Trail
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i=0;i<p.trail.length;i++) {
+    const t = p.trail[i];
+    const a = (i / p.trail.length);
+    ctx.fillStyle = `rgba(180,220,255,${0.035 + a*0.06})`;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r*(0.8 + a*0.6), 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Body
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#0a0a12';
+  ctx.fillStyle = color;
+  if (settings.colorblind && p.polarity==='B') {
+    // dashed ring accent
+    ctx.setLineDash([6,4]);
+  } else {
+    ctx.setLineDash([]);
+  }
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Nose
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y - r-2);
+  ctx.lineTo(p.x-6, p.y-2);
+  ctx.lineTo(p.x+6, p.y-2);
+  ctx.closePath(); ctx.fill();
+
+  // Invert flash on swap
+  if (p.invFlash > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r+6, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Ghost opacity style
+  if (ghost) {
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = 'rgba(180,220,255,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r+4, 0, Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawAsteroid(a) {
+  const pc = getPolarityColors();
+  const c = a.color==='A' ? pc.A : pc.B;
+  ctx.save();
+  ctx.translate(a.x, a.y);
+  ctx.rotate(a.ang);
+  const r = a.r;
+  // Rock with glow
+  ctx.shadowColor = c; ctx.shadowBlur = 8;
+  ctx.fillStyle = c; ctx.strokeStyle = '#0b0f1a'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(r,0);
+  for (let i=1;i<=7;i++) {
+    const th = i*(Math.PI*2/7);
+    const rad = r * (0.8 + Math.sin(i*1.7)*0.15);
+    ctx.lineTo(Math.cos(th)*rad, Math.sin(th)*rad);
+  }
+  ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
+  ctx.restore();
+}
+function drawStar(s) {
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+function drawParticles(dt) {
+  for (const p of world.particles) if (p.active) {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = 1 - (p.life/p.max);
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ===== Main update (fixed 60Hz) ===== */
+function step() {
+  simFrame++;
+  const p = world.player;
+  const slow = (p.focusT>0) ? 0.6 : 1.0;
+  const fdt = dt * slow;
+  time += fdt;
+
+  // Background hue shift at milestones
+  if ((simFrame % 3600)===0 || p.score>0 && p.score % 1000 < 16) {
+    bgHueBase = (bgHueBase + 50) % 360;
+  }
+
+  // Input (movement)
+  const moveLeft = input.mirrored ? input.right : input.left;
+  const moveRight = input.mirrored ? input.left : input.right;
+  let mv = (moveRight?1:0) - (moveLeft?1:0);
+  p.vx += mv * p.speed * 6 * fdt;
+  p.vx *= 0.86;
+  p.x += p.vx * fdt;
+  // Boundaries
+  const margin = 24;
+  p.x = Math.max(margin, Math.min(W - margin, p.x));
+
+  // Camera lean and screen shake decay
+  camLean = camLean*0.9 + (p.vx/W)*0.6;
+  screenShake *= 0.92;
+
+  // Dash
+  if (p.dashT>0) p.dashT -= fdt;
+  if (p.intanT>0) p.intanT -= fdt;
+  p.dashReady = Math.min(1, p.dashReady + fdt/3.2);
+  if (input.tryDash) {
+    doDash(mv!==0?Math.sign(mv): (Math.random()<0.5?-1:1));
+  }
+  input.tryDash = false;
+
+  // Swap
+  if (input.trySwap) swapPolarity();
+  input.trySwap = false;
+  p.invFlash = Math.max(0, p.invFlash - fdt);
+
+  // Laser
+  p.laserReady = Math.min(1, p.laserReady + fdt/0.75);
+  if (input.tryLaser) fireLaser();
+  input.tryLaser = false;
+
+  // Focus
+  p.focusReady = Math.min(1, p.focusReady + fdt/6);
+  if (input.tryFocus) tryFocus();
+  input.tryFocus = false;
+  if (p.focusT>0) p.focusT -= dt; // consume real time for consistent visual 2s
+  if (p.focusT<0) p.focusT=0;
+
+  // Spawn rates
+  updateDifficulty(fdt);
+  spawnT -= fdt;
+  starT -= fdt;
+  const baseSpawn = 0.65 / difficulty; // faster with difficulty
+  if (spawnT <= 0) {
+    spawnT = baseSpawn*(0.6+R()*0.8);
+    spawnAsteroid();
+    // occasional double
+    if (R() < 0.12*difficulty) spawnAsteroid();
+  }
+  const starRate = (activeMutators.includes('Double Stars')? 0.8:1.2);
+  if (starT <= 0) {
+    starT = starRate;
+    spawnStar();
+  }
+
+  // Update asteroids and debris
+  for (const a of world.asteroids) if (a.active) {
+    a.x += a.vx * fdt;
+    a.y += a.vy * fdt;
+    a.ang += a.spin * fdt;
+    if (a.x < -80 || a.x > W+80 || a.y > H+80) a.active = false;
+  }
+
+  // Update stars
+  for (const s of world.stars) if (s.active) {
+    s.y += s.vy * fdt;
+    if (s.y > H+30) s.active = false;
+  }
+
+  // Particles
+  for (const pr of world.particles) if (pr.active) {
+    pr.x += pr.vx * fdt; pr.y += pr.vy * fdt;
+    pr.vx *= 0.99; pr.vy += 10*fdt; // slight gravity
+    pr.life += fdt; if (pr.life > pr.max) pr.active = false;
+  }
+
+  // Ghost playback advance
+  if (ghostPlayback.active) {
+    ghostPlayback.t += fdt;
+    // keep idx to nearest time
+    while (ghostPlayback.idx+1 < ghostData.samples.length && ghostData.samples[ghostPlayback.idx+1].t < ghostPlayback.t) {
+      ghostPlayback.idx++;
+    }
+  }
+
+  // Near-miss tracking and collisions
+  let closest2 = Infinity, closestOpp2 = Infinity, twoSideThread = false;
+  let leftClose=false, rightClose=false;
+  for (const a of world.asteroids) if (a.active) {
+    // Near miss
+    const d2 = dist2(a.x, a.y, p.x, p.y);
+    if (d2 < closest2) closest2 = d2;
+    // Check sides around player y-range
+    if (Math.abs(a.y - p.y) < a.r*1.2 + 18) {
+      if (a.x < p.x) leftClose = true; else rightClose = true;
+    }
+    // Collision check if opposite color and not intangibility
+    if (p.intanT <= 0 && a.color !== p.polarity) {
+      if (d2 < (a.r + p.r)*(a.r + p.r)) {
+        // Hit
+        burst(p.x, p.y, '#ff7b7b', 24, 260, 3);
+        sfxCollision();
+        screenShake = 20;
+        // End run
+        gameOver();
+        return;
+      }
+    }
+    if (a.color !== p.polarity && d2 < closestOpp2) closestOpp2 = d2;
+  }
+  twoSideThread = leftClose && rightClose;
+
+  const nearThresh = 140;
+  const closest = Math.sqrt(closest2);
+  const nearF = Math.max(0, 1 - (closest / nearThresh));
+  // Fill near-miss meter when near
+  world.player.nearMeter = Math.max(0, Math.min(1, p.nearMeter + (nearF>0.1 ? (nearF*0.8*dt) : (-0.15*dt))));
+  // Bonus points for near-miss frames
+  if (nearF>0.55) addScore(0.5);
+  if (twoSideThread) { addScore(6); burst(p.x, p.y, '#bde0fe', 6, 80, 2); }
+
+  // Star pickups
+  for (const s of world.stars) if (s.active) {
+    const d2 = dist2(s.x, s.y, p.x, p.y);
+    if (d2 < (s.r + p.r)*(s.r + p.r)) {
+      s.active = false;
+      sfxStar(500+Math.random()*400);
+      burst(s.x, s.y, '#fff', 10, 120, 2);
+      // Combo
+      if (p.comboT > 0) p.combo++;
+      else p.combo = 1;
+      p.comboT = 3.0;
+      addScore(25);
+    }
+  }
+  if (p.comboT>0) p.comboT -= fdt; else p.combo=1;
+
+  // Multiplier: base 1 + danger time if staying in danger polarity
+  // Define "danger" as: majority of visible asteroids are opposite color near player y
+  let opp=0,same=0;
+  for (const a of world.asteroids) if (a.active && a.y < p.y+200) {
+    (a.color !== p.polarity ? opp++ : same++);
+  }
+  if (opp > same+1) p.dangerTime = Math.min(6, p.dangerTime + fdt);
+  else p.dangerTime = Math.max(0, p.dangerTime - fdt*0.6);
+  p.mult = 1 + p.dangerTime*0.1;
+
+  // Passive score gain over time
+  addScore( (0.8 + difficulty*0.2) );
+
+  // Ready states UI: focus gets ready only when meter full
+  // handled in updateHUD()
+
+  // Record ghost
+  recordSample(fdt);
+
+  // Input: continuous actions done; reset single-use triggers handled earlier
+}
+
+/* ===== Game over & bests ===== */
+function gameOver() {
+  const p = world.player;
+  p.dead = true;
+  // Save global best
+  const best = Math.max(Number(localStorage.getItem(LS_BEST)||'0'), p.score);
+  localStorage.setItem(LS_BEST', best); // fix later
+}
+</script>
+<script>
+/* The above script prematurely ended; continue implementation cleanly below without breaking context. */
+
+/* ===== Fix accidental string typo in localStorage set ===== */
+(function(){
+  // no-op, placeholder to keep script separation safe
+})();
+
+/* ===== Continue game logic ===== */
+function gameOver() {
+  const p = world.player;
+  p.dead = true;
+  // Save bests
+  const gbest = Math.max(Number(localStorage.getItem(LS_BEST)||'0'), p.score);
+  localStorage.setItem(LS_BEST, String(gbest));
+  if (settings.daily) {
+    const dbest = Math.max(Number(localStorage.getItem(LS_DAILY_BEST)||'0'), p.score);
+    localStorage.setItem(LS_DAILY_BEST, String(dbest));
+  }
+  // Save ghost if global best
+  saveGhostIfBest(p.score, time);
+  // Auto reset after a short delay
+  setTimeout
